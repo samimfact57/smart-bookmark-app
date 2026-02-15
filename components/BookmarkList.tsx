@@ -1,11 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/components/providers/AuthProvider"
 import { BookmarkCard } from "./BookmarkCard"
 import { EmptyState } from "./EmptyState"
-import { Loader2 } from "lucide-react"
+import { Spin } from "@openai/apps-sdk-ui/components/Icon"
 
 interface Bookmark {
     id: string
@@ -14,15 +14,36 @@ interface Bookmark {
     created_at: string
 }
 
+function getDemoBookmarks(): Bookmark[] {
+    if (typeof window === 'undefined') return []
+    const raw = localStorage.getItem('demo_bookmarks')
+    return raw ? JSON.parse(raw) : []
+}
+
 export function BookmarkList() {
     const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
     const [loading, setLoading] = useState(true)
-    const { user } = useAuth()
+    const { user, isDemo } = useAuth()
     const supabase = createClient()
+
+    const loadDemoBookmarks = useCallback(() => {
+        setBookmarks(getDemoBookmarks())
+        setLoading(false)
+    }, [])
 
     useEffect(() => {
         if (!user) return
 
+        if (isDemo) {
+            loadDemoBookmarks()
+            // Listen for changes from AddBookmarkForm and BookmarkCard
+            window.addEventListener('demo-bookmarks-changed', loadDemoBookmarks)
+            return () => {
+                window.removeEventListener('demo-bookmarks-changed', loadDemoBookmarks)
+            }
+        }
+
+        // Supabase mode
         const fetchBookmarks = async () => {
             const { data, error } = await supabase
                 .from('bookmarks')
@@ -63,12 +84,12 @@ export function BookmarkList() {
         return () => {
             supabase.removeChannel(channel)
         }
-    }, [user, supabase])
+    }, [user, isDemo, supabase, loadDemoBookmarks])
 
     if (loading) {
         return (
             <div className="flex justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <Spin className="size-8 animate-spin text-secondary" />
             </div>
         )
     }
@@ -78,7 +99,7 @@ export function BookmarkList() {
     }
 
     return (
-        <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="grid gap-3">
             {bookmarks.map((bookmark) => (
                 <BookmarkCard key={bookmark.id} bookmark={bookmark} />
             ))}
