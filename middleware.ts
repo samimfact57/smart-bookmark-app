@@ -2,12 +2,13 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-    // 1. Safe Env Check: Prevent crash if env vars are missing (e.g. during build or misconfigured prod)
+    // 1. Safe Env Check
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+    // Should not block if env vars missing, just warn
     if (!supabaseUrl || !supabaseKey) {
-        console.warn('Middleware: Missing Supabase URL or Key. Skipping auth check.')
+        // console.warn('Middleware: Missing Supabase URL or Key. Skipping auth check.')
         return NextResponse.next({
             request: {
                 headers: request.headers,
@@ -47,20 +48,31 @@ export async function middleware(request: NextRequest) {
         data: { user },
     } = await supabase.auth.getUser()
 
-    // 3. Protected Routes Logic
+    // 3. Demo Check (via cookie)
+    const isDemoMode = request.cookies.get('demo_mode')?.value === 'true'
+
+    // 4. Protected Routes Logic
     const isLoginPage = request.nextUrl.pathname === '/login'
     const isAuthRoute = request.nextUrl.pathname.startsWith('/auth')
     const isPublicRoute = isLoginPage || isAuthRoute
 
-    if (!user && !isPublicRoute) {
-        // no user, redirect to login
+    // Allow access if user is logged in OR if in demo mode
+    if (!user && !isPublicRoute && !isDemoMode) {
+        // no user AND not in demo mode -> redirect to login
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         return NextResponse.redirect(url)
     }
 
     if (user && isLoginPage) {
-        // user logged in, redirect to dashboard
+        // user logged in -> redirect to dashboard
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        return NextResponse.redirect(url)
+    }
+
+    // If in demo mode and on login page, also redirect to dashboard
+    if (isDemoMode && isLoginPage) {
         const url = request.nextUrl.clone()
         url.pathname = '/dashboard'
         return NextResponse.redirect(url)

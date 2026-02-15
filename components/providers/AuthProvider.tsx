@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import { setCookie, deleteCookie, getCookie } from 'cookies-next'
 
 const DEMO_USER_ID = 'demo-user-local'
 
@@ -26,8 +27,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = createClient()
 
     useEffect(() => {
-        // Check if there was a previous demo session
-        if (typeof window !== 'undefined' && localStorage.getItem('demo_mode') === 'true') {
+        // Check if there was a previous demo session (via cookie or local storage)
+        const demoCookie = getCookie('demo_mode')
+        const demoLocal = typeof window !== 'undefined' ? localStorage.getItem('demo_mode') : null
+
+        if (demoCookie === 'true' || demoLocal === 'true') {
             setUser({ id: DEMO_USER_ID, user_metadata: { full_name: 'Demo User' } } as unknown as User)
             setIsDemo(true)
             setIsLoading(false)
@@ -51,8 +55,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isDemo) {
             localStorage.removeItem('demo_mode')
             localStorage.removeItem('demo_bookmarks')
+            deleteCookie('demo_mode')
             setIsDemo(false)
             setUser(null)
+            // Reload to clear state and re-trigger middleware
+            window.location.href = '/'
             return
         }
         await supabase.auth.signOut()
@@ -69,8 +76,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const startDemo = () => {
         localStorage.setItem('demo_mode', 'true')
+        setCookie('demo_mode', 'true', { maxAge: 60 * 60 * 24 * 365 }) // 1 year
         setUser({ id: DEMO_USER_ID, user_metadata: { full_name: 'Demo User' } } as unknown as User)
         setIsDemo(true)
+        // Refresh to let middleware see the cookie
+        window.location.reload()
     }
 
     return (
