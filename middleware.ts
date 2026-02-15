@@ -2,13 +2,26 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+    // 1. Safe Env Check: Prevent crash if env vars are missing (e.g. during build or misconfigured prod)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (!supabaseUrl || !supabaseKey) {
+        console.warn('Middleware: Missing Supabase URL or Key. Skipping auth check.')
+        return NextResponse.next({
+            request: {
+                headers: request.headers,
+            },
+        })
+    }
+
     let supabaseResponse = NextResponse.next({
         request,
     })
 
     const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        supabaseUrl,
+        supabaseKey,
         {
             cookies: {
                 getAll() {
@@ -29,22 +42,25 @@ export async function middleware(request: NextRequest) {
         }
     )
 
+    // 2. Auth Check
     const {
         data: { user },
     } = await supabase.auth.getUser()
 
-    if (
-        !user &&
-        !request.nextUrl.pathname.startsWith('/login') &&
-        !request.nextUrl.pathname.startsWith('/auth')
-    ) {
-        // no user, potentially respond by redirecting the user to the login page
+    // 3. Protected Routes Logic
+    const isLoginPage = request.nextUrl.pathname === '/login'
+    const isAuthRoute = request.nextUrl.pathname.startsWith('/auth')
+    const isPublicRoute = isLoginPage || isAuthRoute
+
+    if (!user && !isPublicRoute) {
+        // no user, redirect to login
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         return NextResponse.redirect(url)
     }
 
-    if (user && request.nextUrl.pathname === '/login') {
+    if (user && isLoginPage) {
+        // user logged in, redirect to dashboard
         const url = request.nextUrl.clone()
         url.pathname = '/dashboard'
         return NextResponse.redirect(url)
@@ -60,6 +76,7 @@ export const config = {
          * - _next/static (static files)
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
+         * - auth/callback (important to exclude to avoid infinite loops if something goes wrong, though usually fine)
          * Feel free to modify this pattern to include more paths.
          */
         '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
